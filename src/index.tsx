@@ -5,6 +5,8 @@ import { serveStatic } from 'hono/cloudflare-workers'
 type Bindings = {
   OPENAI_API_KEY: string
   OPENAI_BASE_URL: string
+  NAVER_CLIENT_ID: string
+  NAVER_CLIENT_SECRET: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -230,11 +232,20 @@ app.get('/', (c) => {
       <div class="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-sm font-semibold flex items-center gap-2">
-            <i class="fas fa-bell text-orange-400"></i> 트렌드 알림
+            <i class="fas fa-bell text-orange-400"></i> 네이버 쇼핑 트렌드
           </h3>
-          <span class="text-xs text-slate-500" id="alertUpdated">—</span>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-500" id="alertUpdated">로딩 중...</span>
+            <button onclick="refreshFeed()" class="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-slate-700 transition-all" title="새로고침">
+              <i id="refreshIcon" class="fas fa-sync-alt text-slate-400 text-xs"></i>
+            </button>
+          </div>
         </div>
-        <div id="alertFeed" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
+        <div id="alertFeed" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <div class="flex items-center justify-center py-6 text-slate-500 text-xs gap-2">
+            <i class="fas fa-circle-notch fa-spin"></i> 네이버 트렌드 불러오는 중...
+          </div>
+        </div>
       </div>
 
       <!-- TOP 3 -->
@@ -283,10 +294,28 @@ app.get('/', (c) => {
             <option value="토이굿즈">🧸 토이굿즈</option>
           </select>
         </div>
-        <div>
-          <label class="text-xs font-medium text-slate-300 mb-1.5 block">인스타그램 URL <span class="text-slate-500">(팔로워 링크)</span></label>
-          <input id="mInstaUrl" type="text" placeholder="예: https://instagram.com/roundlab"
-            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
+        <div class="space-y-2">
+          <label class="text-xs font-medium text-slate-300 mb-1 block">채널 URL <span class="text-slate-500">(선택 — 링크로 연결됩니다)</span></label>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-pink-400 w-20 flex-shrink-0"><i class="fab fa-instagram mr-1"></i>인스타</span>
+            <input id="mInstaUrl" type="text" placeholder="https://instagram.com/brand"
+              class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-emerald-400 w-20 flex-shrink-0"><i class="fas fa-store mr-1"></i>자사몰</span>
+            <input id="mSelfUrl" type="text" placeholder="https://brand.com"
+              class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-green-400 w-20 flex-shrink-0"><i class="fas fa-shopping-cart mr-1"></i>스마트스토어</span>
+            <input id="mSmartUrl" type="text" placeholder="https://smartstore.naver.com/brand"
+              class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400 w-20 flex-shrink-0"><i class="fas fa-link mr-1"></i>기타</span>
+            <input id="mEtcUrl" type="text" placeholder="https://other-channel.com"
+              class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
+          </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -620,26 +649,73 @@ function renderCatChart() {
 }
 
 /* ============================================================
-   알림 피드
+   알림 피드 — 네이버 쇼핑 트렌드 API 연동
+   카테고리 코드: 화장품/미용=50000002, 생활/건강=50000003, 출산/육아=50000006, 완구/취미=50000010
    ============================================================ */
-function renderAlerts() {
+const NAVER_CATS = [
+  { name:'뷰티',     code:'50000002', color:'pink',   icon:'magic' },
+  { name:'리빙',     code:'50000003', color:'emerald', icon:'home' },
+  { name:'펫용품',   code:'55003626', color:'yellow',  icon:'paw' },
+  { name:'토이굿즈', code:'50000010', color:'purple',  icon:'cube' },
+];
+
+async function renderAlerts() {
+  const feed = document.getElementById('alertFeed');
+  feed.innerHTML = \`<div class="flex items-center justify-center py-6 text-slate-500 text-xs gap-2"><i class="fas fa-circle-notch fa-spin"></i> 네이버 트렌드 불러오는 중...</div>\`;
+
+  try {
+    const res = await fetch('/api/naver-trend');
+    const data = await res.json();
+
+    if (!data.success || !data.trends?.length) {
+      feed.innerHTML = data.fallback
+        ? renderFallbackAlerts()
+        : \`<p class="text-xs text-slate-500 text-center py-4">트렌드 데이터를 불러오지 못했습니다.<br><span class="text-slate-600">\${data.error||''}</span></p>\`;
+      document.getElementById('alertUpdated').textContent = '—';
+      return;
+    }
+
+    feed.innerHTML = data.trends.map(t => \`
+      <div class="flex items-start gap-2.5 py-2.5 border-b border-slate-700/30 last:border-0">
+        <div class="w-7 h-7 bg-\${t.color}-500/10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+          <i class="fas fa-\${t.icon} text-\${t.color}-400 text-[10px]"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1.5 mb-0.5">
+            <span class="text-[10px] font-semibold text-\${t.color}-400">\${t.category}</span>
+            <span class="text-[10px] text-slate-500">\${t.period}</span>
+          </div>
+          <p class="text-xs text-slate-300 leading-relaxed">\${t.text}</p>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <div class="text-xs font-bold \${t.trend>0?'text-emerald-400':t.trend<0?'text-red-400':'text-slate-400'}">\${t.trend>0?'+':''}\${t.trend}%</div>
+          <div class="text-[10px] text-slate-500">4주 변화</div>
+        </div>
+      </div>
+    \`).join('');
+
+    document.getElementById('alertUpdated').textContent = new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 기준';
+  } catch(e) {
+    feed.innerHTML = renderFallbackAlerts();
+    document.getElementById('alertUpdated').textContent = '오프라인 모드';
+  }
+}
+
+function renderFallbackAlerts() {
   const items = [
-    {icon:'fire',color:'orange',text:'뷰티 카테고리 팔로워 급증 트렌드 감지 (+18.5%)'},
-    {icon:'paw',color:'emerald',text:'펫 카테고리 신규 브랜드 입점 적기 신호 포착'},
-    {icon:'star',color:'yellow',text:'라운드랩 AI 점수 91점 — 즉시 입점 검토 권장'},
-    {icon:'home',color:'indigo',text:'리빙 카테고리 경쟁사 포인트몰 3개 신규 입점 확인'},
-    {icon:'bell',color:'red',text:'포인트 만료 시즌 D-30 — 토이굿즈 기획전 준비 필요'},
-    {icon:'cube',color:'purple',text:'토이굿즈 한정판 콜래버 시즌 진입 — 소싱 우선 검토 권장'},
+    {icon:'magic', color:'pink',   text:'뷰티 카테고리 클릭 급증 감지 — 스킨케어/선케어 관심 상승'},
+    {icon:'home',  color:'emerald',text:'리빙 카테고리 주거용품 소비 증가 트렌드 포착'},
+    {icon:'paw',   color:'yellow', text:'펫 카테고리 프리미엄 사료/용품 수요 지속 상승'},
+    {icon:'cube',  color:'purple', text:'토이굿즈 캐릭터 콜래버 상품 검색 클릭 증가'},
   ];
-  document.getElementById('alertFeed').innerHTML = items.map(a=>\`
+  return items.map(a=>\`
     <div class="flex items-start gap-2.5 py-2 border-b border-slate-700/30 last:border-0">
       <div class="w-6 h-6 bg-\${a.color}-500/10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
         <i class="fas fa-\${a.icon} text-\${a.color}-400 text-[10px]"></i>
       </div>
       <p class="text-xs text-slate-300 leading-relaxed">\${a.text}</p>
     </div>
-  \`).join('');
-  document.getElementById('alertUpdated').textContent = new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 기준';
+  \`).join('')+'<p class="text-[10px] text-slate-600 text-center pt-1">* 네이버 API 키 미설정 — 오프라인 데이터</p>';
 }
 
 /* ============================================================
@@ -668,7 +744,7 @@ function renderTop() {
 function openScanModal() {
   selChannels = [];
   document.querySelectorAll('.channel-btn').forEach(b=>b.classList.remove('sel'));
-  ['mName','mDesc','mInstaUrl'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['mName','mDesc','mInstaUrl','mSelfUrl','mSmartUrl','mEtcUrl'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   ['mCat','mFollowers','mGrowth'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('scanForm').classList.remove('hidden');
   document.getElementById('analyzingState').classList.add('hidden');
@@ -694,6 +770,9 @@ async function startAnalysis() {
   const growth    = parseFloat(document.getElementById('mGrowth').value)||10;
   const desc      = document.getElementById('mDesc').value.trim();
   const instaUrl  = document.getElementById('mInstaUrl').value.trim();
+  const selfUrl   = document.getElementById('mSelfUrl').value.trim();
+  const smartUrl  = document.getElementById('mSmartUrl').value.trim();
+  const etcUrl    = document.getElementById('mEtcUrl').value.trim();
 
   document.getElementById('scanForm').classList.add('hidden');
   document.getElementById('analyzingState').classList.remove('hidden');
@@ -703,7 +782,7 @@ async function startAnalysis() {
     const res = await fetch('/api/analyze-brand',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ name, category:cat, followers, growthRate:growth, channels:selChannels, description:desc, instaUrl })
+      body: JSON.stringify({ name, category:cat, followers, growthRate:growth, channels:selChannels, description:desc, instaUrl, selfUrl, smartUrl, etcUrl })
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'분석 실패');
@@ -843,16 +922,20 @@ function openDetail(id) {
       <div class="bg-slate-800 rounded-2xl p-4 space-y-3">
         <h4 class="text-sm font-semibold">📊 채널 현황</h4>
         <div class="space-y-2 text-sm">
-          <div class="flex justify-between"><span class="text-slate-400">팔로워</span>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">인스타그램</span>
             \${b.instaUrl
-              ? \`<a href="\${b.instaUrl}" target="_blank" rel="noopener" class="font-medium text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">\${fmtNum(b.followers)}<i class="fab fa-instagram text-xs"></i></a>\`
-              : \`<span class="font-medium">\${fmtNum(b.followers)}</span>\`}
+              ? \`<a href="\${b.instaUrl}" target="_blank" rel="noopener" class="font-medium text-pink-400 hover:text-pink-300 flex items-center gap-1 transition-colors"><i class="fab fa-instagram text-xs"></i>\${fmtNum(b.followers)}</a>\`
+              : \`<span class="font-medium text-slate-300">\${fmtNum(b.followers)}</span>\`}
           </div>
           <div class="flex justify-between"><span class="text-slate-400">월 성장률</span><span class="text-emerald-400 font-medium">+\${b.growthRate}%</span></div>
           <div class="flex justify-between"><span class="text-slate-400">참여율</span><span class="text-indigo-400 font-medium">\${b.engagementRate}%</span></div>
         </div>
-        <div class="flex flex-wrap gap-1 pt-1">
-          \${(b.channels||[]).map(c=>\`<span class="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-lg">\${c}</span>\`).join('')}
+        <div class="flex flex-wrap gap-1.5 pt-1">
+          \${b.selfUrl  ? \`<a href="\${b.selfUrl}"  target="_blank" rel="noopener" class="text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-1 rounded-lg hover:bg-emerald-500/20 transition-all flex items-center gap-1"><i class="fas fa-store text-[10px]"></i>자사몰</a>\` : ''}
+          \${b.smartUrl ? \`<a href="\${b.smartUrl}" target="_blank" rel="noopener" class="text-xs bg-green-500/10 text-green-300 border border-green-500/30 px-2 py-1 rounded-lg hover:bg-green-500/20 transition-all flex items-center gap-1"><i class="fas fa-shopping-cart text-[10px]"></i>스마트스토어</a>\` : ''}
+          \${b.etcUrl   ? \`<a href="\${b.etcUrl}"   target="_blank" rel="noopener" class="text-xs bg-slate-600/50 text-slate-300 border border-slate-500/30 px-2 py-1 rounded-lg hover:bg-slate-500/30 transition-all flex items-center gap-1"><i class="fas fa-link text-[10px]"></i>기타</a>\` : ''}
+          \${(b.channels||[]).map(c=>\`<span class="text-xs bg-slate-700/80 text-slate-400 px-2 py-1 rounded-lg">\${c}</span>\`).join('')}
         </div>
       </div>
       <div class="bg-slate-800 rounded-2xl p-4 space-y-3">
@@ -890,10 +973,6 @@ function openDetail(id) {
 
     <!-- 액션 버튼 -->
     <div class="flex gap-3">
-      <button onclick="setRecom('\${b.id}')"
-        class="flex-1 bg-emerald-600 hover:bg-emerald-700 py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2">
-        <i class="fas fa-check"></i> 입점 추천 확정
-      </button>
       <button onclick="exportTxt('\${b.id}')"
         class="flex-1 bg-indigo-600 hover:bg-indigo-700 py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2">
         <i class="fas fa-download"></i> 리포트 저장
@@ -906,10 +985,7 @@ function openDetail(id) {
 /* ============================================================
    유틸 액션
    ============================================================ */
-function setRecom(id) {
-  const b = brands.find(x=>x.id===id);
-  if(b){ b.status='입점 추천'; b.statusColor='emerald'; save(); document.getElementById('detailModal').classList.add('hidden'); renderAll(); notify(\`✅ \${b.name} 입점 추천 확정\`,'success'); }
-}
+
 
 function exportTxt(id) {
   const b = brands.find(x=>x.id===id);
@@ -958,10 +1034,9 @@ function delBrand(id) {
 async function refreshFeed() {
   const icon=document.getElementById('refreshIcon');
   icon.classList.add('fa-spin');
-  renderAlerts();
-  await sleep(1200);
+  await renderAlerts();
   icon.classList.remove('fa-spin');
-  notify('📡 피드 새로고침 완료','success');
+  notify('📡 네이버 트렌드 새로고침 완료','success');
 }
 
 /* ============================================================
@@ -997,7 +1072,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeScanModal();
    ============================================================ */
 app.post('/api/analyze-brand', async (c) => {
   const body = await c.req.json()
-  const { name, category, followers, growthRate, channels, description, instaUrl } = body
+  const { name, category, followers, growthRate, channels, description, instaUrl, selfUrl, smartUrl, etcUrl } = body
 
   const apiKey = c.env?.OPENAI_API_KEY
   const baseUrl = c.env?.OPENAI_BASE_URL || 'https://api.openai.com/v1'
@@ -1054,7 +1129,10 @@ app.post('/api/analyze-brand', async (c) => {
       competitorGap:  String(analysis.competitorGap)  || '중간',
       tags:           Array.isArray(analysis.tags) ? analysis.tags : [],
       aiComment:      String(analysis.aiComment)      || '분석 완료',
-      instaUrl:       instaUrl || '',
+      instaUrl:       instaUrl  || '',
+      selfUrl:        selfUrl   || '',
+      smartUrl:       smartUrl  || '',
+      etcUrl:         etcUrl    || '',
     }
 
     return c.json({ success: true, brand })
@@ -1128,6 +1206,83 @@ URL패턴: instagram→뷰티/패션, smartstore→네이버기반, musinsa→�
   } catch (e: any) {
     console.error('analyze-url error:', e)
     return c.json({ success: false, error: e.message || '분석 오류' }, 500)
+  }
+})
+
+/* ============================================================
+   API: 네이버 쇼핑 트렌드 (쇼핑인사이트 API)
+   헤더: X-Naver-Client-Id / X-Naver-Client-Secret
+   ============================================================ */
+app.get('/api/naver-trend', async (c) => {
+  const clientId     = c.env?.NAVER_CLIENT_ID
+  const clientSecret = c.env?.NAVER_CLIENT_SECRET
+
+  // API 키 미설정 → 폴백 응답
+  if (!clientId || !clientSecret) {
+    return c.json({ success: false, fallback: true, error: '네이버 API 키 미설정' })
+  }
+
+  // 조회 기간: 최근 8주
+  const endDate   = new Date()
+  const startDate = new Date(endDate.getTime() - 8 * 7 * 24 * 60 * 60 * 1000)
+  const fmt       = (d: Date) => d.toISOString().slice(0, 10)
+
+  const categories = [
+    { name: '뷰티',     code: '50000002', color: 'pink',    icon: 'magic' },
+    { name: '리빙',     code: '50000003', color: 'emerald', icon: 'home'  },
+    { name: '펫용품',   code: '55003626', color: 'yellow',  icon: 'paw'   },
+    { name: '토이굿즈', code: '50000010', color: 'purple',  icon: 'cube'  },
+  ]
+
+  try {
+    const body = JSON.stringify({
+      startDate: fmt(startDate),
+      endDate:   fmt(endDate),
+      timeUnit:  'week',
+      category:  categories.map(c => ({ name: c.name, param: [c.code] })),
+    })
+
+    const res = await fetch('https://openapi.naver.com/v1/datalab/shopping/categories', {
+      method: 'POST',
+      headers: {
+        'X-Naver-Client-Id':     clientId,
+        'X-Naver-Client-Secret': clientSecret,
+        'Content-Type': 'application/json',
+      },
+      body,
+    })
+
+    if (!res.ok) {
+      const errTxt = await res.text()
+      return c.json({ success: false, fallback: true, error: `네이버 API ${res.status}: ${errTxt}` })
+    }
+
+    const json = await res.json() as any
+    const results: any[] = json.results || []
+
+    // 각 카테고리별 최근 4주 평균 ratio 계산 → 증감률 도출
+    const trends = results.map((r: any) => {
+      const catMeta = categories.find(c => c.name === r.title) || categories[0]
+      const data: any[] = r.data || []
+      const last4  = data.slice(-4)
+      const prev4  = data.slice(-8, -4)
+      const avg = (arr: any[]) => arr.length ? arr.reduce((s: number, d: any) => s + d.ratio, 0) / arr.length : 0
+      const currAvg = avg(last4)
+      const prevAvg = avg(prev4)
+      const trendPct = prevAvg > 0 ? Math.round((currAvg - prevAvg) / prevAvg * 100) : 0
+      const latestRatio = last4.length ? Math.round(last4[last4.length-1].ratio) : 0
+      const period = last4.length ? last4[last4.length-1].period?.slice(0,10) : ''
+
+      const trendWord = trendPct > 10 ? '급상승' : trendPct > 3 ? '상승' : trendPct < -10 ? '급하락' : trendPct < -3 ? '하락' : '보합'
+      const text = `${r.title} 카테고리 검색 클릭 ${trendWord} — 쇼핑 관심도 ${latestRatio}pt (${trendPct>0?'↑':'↓'} 4주 변화)`
+
+      return { category: r.title, color: catMeta.color, icon: catMeta.icon, trend: trendPct, period, text }
+    })
+
+    return c.json({ success: true, trends })
+  } catch (e: any) {
+    console.error('naver-trend error:', e)
+    return c.json({ success: false, fallback: true, error: e.message })
   }
 })
 
