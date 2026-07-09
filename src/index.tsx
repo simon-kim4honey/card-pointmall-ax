@@ -1234,14 +1234,8 @@ app.get('/api/naver-trend', async (c) => {
     { name: '토이굿즈', code: '50000010', color: 'purple',  icon: 'cube'  },
   ]
 
-  try {
-    const body = JSON.stringify({
-      startDate: fmt(startDate),
-      endDate:   fmt(endDate),
-      timeUnit:  'week',
-      category:  categories.map(c => ({ name: c.name, param: [c.code] })),
-    })
-
+  // 네이버 API 최대 3개 제한 → 2번 호출로 4개 처리
+  const callNaver = async (cats: typeof categories) => {
     const res = await fetch('https://openapi.naver.com/v1/datalab/shopping/categories', {
       method: 'POST',
       headers: {
@@ -1249,35 +1243,46 @@ app.get('/api/naver-trend', async (c) => {
         'X-Naver-Client-Secret': clientSecret,
         'Content-Type': 'application/json',
       },
-      body,
+      body: JSON.stringify({
+        startDate: fmt(startDate),
+        endDate:   fmt(endDate),
+        timeUnit:  'week',
+        category:  cats.map(c => ({ name: c.name, param: [c.code] })),
+      }),
     })
+    if (!res.ok) throw new Error(`네이버 API ${res.status}: ${await res.text()}`)
+    const j = await res.json() as any
+    return (j.results || []) as any[]
+  }
 
-    if (!res.ok) {
-      const errTxt = await res.text()
-      return c.json({ success: false, fallback: true, error: `네이버 API ${res.status}: ${errTxt}` })
-    }
-
-    const json = await res.json() as any
-    const results: any[] = json.results || []
+  try {
+    // 1차: 뷰티, 리빙, 펫용품 / 2차: 토이굿즈
+    const [res1, res2] = await Promise.all([
+      callNaver(categories.slice(0, 3)),
+      callNaver(categories.slice(3)),
+    ])
+    const results = [...res1, ...res2]
 
     // 각 카테고리별 최근 4주 평균 ratio 계산 → 증감률 도출
-    const trends = results.map((r: any) => {
-      const catMeta = categories.find(c => c.name === r.title) || categories[0]
-      const data: any[] = r.data || []
-      const last4  = data.slice(-4)
-      const prev4  = data.slice(-8, -4)
-      const avg = (arr: any[]) => arr.length ? arr.reduce((s: number, d: any) => s + d.ratio, 0) / arr.length : 0
-      const currAvg = avg(last4)
-      const prevAvg = avg(prev4)
-      const trendPct = prevAvg > 0 ? Math.round((currAvg - prevAvg) / prevAvg * 100) : 0
-      const latestRatio = last4.length ? Math.round(last4[last4.length-1].ratio) : 0
-      const period = last4.length ? last4[last4.length-1].period?.slice(0,10) : ''
+    const trends = results
+      .filter((r: any) => (r.data || []).length > 0)
+      .map((r: any) => {
+        const catMeta = categories.find(c => c.name === r.title) || categories[0]
+        const data: any[] = r.data || []
+        const last4  = data.slice(-4)
+        const prev4  = data.slice(-8, -4)
+        const avg = (arr: any[]) => arr.length ? arr.reduce((s: number, d: any) => s + d.ratio, 0) / arr.length : 0
+        const currAvg = avg(last4)
+        const prevAvg = avg(prev4)
+        const trendPct = prevAvg > 0 ? Math.round((currAvg - prevAvg) / prevAvg * 100) : 0
+        const latestRatio = last4.length ? Math.round(last4[last4.length-1].ratio) : 0
+        const period = last4.length ? last4[last4.length-1].period?.slice(0,10) : ''
 
-      const trendWord = trendPct > 10 ? '급상승' : trendPct > 3 ? '상승' : trendPct < -10 ? '급하락' : trendPct < -3 ? '하락' : '보합'
-      const text = `${r.title} 카테고리 검색 클릭 ${trendWord} — 쇼핑 관심도 ${latestRatio}pt (${trendPct>0?'↑':'↓'} 4주 변화)`
+        const trendWord = trendPct > 10 ? '급상승' : trendPct > 3 ? '상승' : trendPct < -10 ? '급하락' : trendPct < -3 ? '하락' : '보합'
+        const text = `${r.title} 카테고리 검색 클릭 ${trendWord} — 쇼핑 관심도 ${latestRatio}pt (${trendPct>0?'↑':'↓'} 4주 변화)`
 
-      return { category: r.title, color: catMeta.color, icon: catMeta.icon, trend: trendPct, period, text }
-    })
+        return { category: r.title, color: catMeta.color, icon: catMeta.icon, trend: trendPct, period, text }
+      })
 
     return c.json({ success: true, trends })
   } catch (e: any) {
