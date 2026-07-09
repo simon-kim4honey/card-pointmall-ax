@@ -959,7 +959,7 @@ function exportTxt(id) {
     '',
     '[키워드]',
     (b.tags||[]).map(t=>'#'+t).join(' '),
-  ].join('\n');
+  ].join('\\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain;charset=utf-8'}));
   a.download='소싱레이더_'+b.name+'_'+new Date().toLocaleDateString('ko-KR').replace(/\\./g,'')+'.txt';
