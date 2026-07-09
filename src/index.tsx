@@ -306,14 +306,10 @@ app.get('/', (c) => {
           <label class="text-xs font-medium text-slate-300 mb-1.5 block">카테고리 *</label>
           <select id="mCat" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-all">
             <option value="">선택하세요</option>
-            <option value="뷰티">뷰티/스킨케어</option>
-            <option value="패션">패션/의류</option>
-            <option value="라이프">라이프스타일/홈</option>
-            <option value="푸드">푸드/식품</option>
-            <option value="가전">가전/IT</option>
-            <option value="스포츠">스포츠/아웃도어</option>
-            <option value="유아">유아/키즈</option>
-            <option value="펫">펫/반려동물</option>
+            <option value="뷰티">💄 뷰티</option>
+            <option value="리빙">🏡 리빙</option>
+            <option value="펫">🐾 펫용품</option>
+            <option value="토이굿즈">🧸 토이굿즈</option>
           </select>
         </div>
         <div class="grid grid-cols-2 gap-3">
