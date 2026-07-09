@@ -456,13 +456,16 @@ const SAMPLE = [
    초기화
    ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
-  const saved = localStorage.getItem('sonar_v2');
+  // 구버전 캐시 자동 삭제 (카테고리 변경으로 인한 초기화)
+  localStorage.removeItem('sonar_v2');
+  localStorage.removeItem('sonar_v1');
+  const saved = localStorage.getItem('sonar_v3');
   brands = saved ? JSON.parse(saved) : [...SAMPLE];
   renderAll();
   renderAlerts();
 });
 
-function save() { localStorage.setItem('sonar_v2', JSON.stringify(brands)); }
+function save() { localStorage.setItem('sonar_v3', JSON.stringify(brands)); }
 
 function renderAll() {
   applyFilter();
