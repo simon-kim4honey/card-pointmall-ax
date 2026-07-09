@@ -226,35 +226,6 @@ app.get('/', (c) => {
         <canvas id="catChart" height="180"></canvas>
       </div>
 
-      <!-- 빠른 분석 -->
-      <div class="bg-gradient-to-br from-indigo-900/60 to-purple-900/60 border border-indigo-700/40 rounded-2xl p-5">
-        <h3 class="text-sm font-semibold mb-1 flex items-center gap-2">
-          <i class="fas fa-bolt text-yellow-400"></i> 빠른 분석
-        </h3>
-        <p class="text-xs text-slate-400 mb-3">브랜드 URL을 입력하면 AI가 즉시 분석합니다</p>
-        <div class="space-y-2">
-          <input id="quickUrl" type="text" placeholder="https://instagram.com/brand 또는 브랜드 URL"
-            class="w-full bg-slate-800/80 border border-slate-600/50 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
-          <input id="quickName" type="text" placeholder="브랜드명 (선택)"
-            class="w-full bg-slate-800/80 border border-slate-600/50 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
-          <select id="quickCat" class="w-full bg-slate-800/80 border border-slate-600/50 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 transition-all">
-            <option value="">카테고리 선택 (선택)</option>
-            <option value="뷰티">뷰티/스킨케어</option>
-            <option value="패션">패션/의류</option>
-            <option value="라이프">라이프스타일</option>
-            <option value="푸드">푸드/식품</option>
-            <option value="가전">가전/IT</option>
-            <option value="스포츠">스포츠/아웃도어</option>
-            <option value="유아">유아/키즈</option>
-            <option value="펫">펫/반려동물</option>
-          </select>
-          <button id="quickBtn" onclick="quickAnalyze()"
-            class="w-full bg-indigo-600 hover:bg-indigo-700 py-2.5 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-            <i class="fas fa-satellite-dish"></i> AI 분석 시작
-          </button>
-        </div>
-      </div>
-
       <!-- 트렌드 알림 -->
       <div class="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5">
         <div class="flex items-center justify-between mb-4">
@@ -311,6 +282,11 @@ app.get('/', (c) => {
             <option value="펫">🐾 펫용품</option>
             <option value="토이굿즈">🧸 토이굿즈</option>
           </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-300 mb-1.5 block">인스타그램 URL <span class="text-slate-500">(팔로워 링크)</span></label>
+          <input id="mInstaUrl" type="text" placeholder="예: https://instagram.com/roundlab"
+            class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"/>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -566,7 +542,9 @@ function renderBrandList(list) {
       <div class="grid grid-cols-3 gap-2 mt-4">
         <div class="bg-slate-900/60 rounded-xl p-2.5 text-center">
           <div class="text-[10px] text-slate-400 mb-0.5">팔로워</div>
-          <div class="text-sm font-semibold">\${fmtNum(b.followers)}</div>
+          \${b.instaUrl
+            ? \`<a href="\${b.instaUrl}" target="_blank" rel="noopener" class="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors flex items-center justify-center gap-1">\${fmtNum(b.followers)}<i class="fab fa-instagram text-[10px]"></i></a>\`
+            : \`<div class="text-sm font-semibold">\${fmtNum(b.followers)}</div>\`}
         </div>
         <div class="bg-slate-900/60 rounded-xl p-2.5 text-center">
           <div class="text-[10px] text-slate-400 mb-0.5">성장률</div>
@@ -690,7 +668,7 @@ function renderTop() {
 function openScanModal() {
   selChannels = [];
   document.querySelectorAll('.channel-btn').forEach(b=>b.classList.remove('sel'));
-  ['mName','mDesc'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['mName','mDesc','mInstaUrl'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   ['mCat','mFollowers','mGrowth'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('scanForm').classList.remove('hidden');
   document.getElementById('analyzingState').classList.add('hidden');
@@ -715,6 +693,7 @@ async function startAnalysis() {
   const followers = parseInt(document.getElementById('mFollowers').value)||50000;
   const growth    = parseFloat(document.getElementById('mGrowth').value)||10;
   const desc      = document.getElementById('mDesc').value.trim();
+  const instaUrl  = document.getElementById('mInstaUrl').value.trim();
 
   document.getElementById('scanForm').classList.add('hidden');
   document.getElementById('analyzingState').classList.remove('hidden');
@@ -724,7 +703,7 @@ async function startAnalysis() {
     const res = await fetch('/api/analyze-brand',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ name, category:cat, followers, growthRate:growth, channels:selChannels, description:desc })
+      body: JSON.stringify({ name, category:cat, followers, growthRate:growth, channels:selChannels, description:desc, instaUrl })
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'분석 실패');
@@ -864,7 +843,11 @@ function openDetail(id) {
       <div class="bg-slate-800 rounded-2xl p-4 space-y-3">
         <h4 class="text-sm font-semibold">📊 채널 현황</h4>
         <div class="space-y-2 text-sm">
-          <div class="flex justify-between"><span class="text-slate-400">팔로워</span><span class="font-medium">\${fmtNum(b.followers)}</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">팔로워</span>
+            \${b.instaUrl
+              ? \`<a href="\${b.instaUrl}" target="_blank" rel="noopener" class="font-medium text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">\${fmtNum(b.followers)}<i class="fab fa-instagram text-xs"></i></a>\`
+              : \`<span class="font-medium">\${fmtNum(b.followers)}</span>\`}
+          </div>
           <div class="flex justify-between"><span class="text-slate-400">월 성장률</span><span class="text-emerald-400 font-medium">+\${b.growthRate}%</span></div>
           <div class="flex justify-between"><span class="text-slate-400">참여율</span><span class="text-indigo-400 font-medium">\${b.engagementRate}%</span></div>
         </div>
@@ -1014,7 +997,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeScanModal();
    ============================================================ */
 app.post('/api/analyze-brand', async (c) => {
   const body = await c.req.json()
-  const { name, category, followers, growthRate, channels, description } = body
+  const { name, category, followers, growthRate, channels, description, instaUrl } = body
 
   const apiKey = c.env?.OPENAI_API_KEY
   const baseUrl = c.env?.OPENAI_BASE_URL || 'https://api.openai.com/v1'
@@ -1071,6 +1054,7 @@ app.post('/api/analyze-brand', async (c) => {
       competitorGap:  String(analysis.competitorGap)  || '중간',
       tags:           Array.isArray(analysis.tags) ? analysis.tags : [],
       aiComment:      String(analysis.aiComment)      || '분석 완료',
+      instaUrl:       instaUrl || '',
     }
 
     return c.json({ success: true, brand })
