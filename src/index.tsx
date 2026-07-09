@@ -184,9 +184,9 @@ app.get('/', (c) => {
           </div>
           <select id="sortSel" onchange="applyFilter()"
             class="bg-slate-700 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="recent">최근 분석순</option>
             <option value="score">AI 점수 높은순</option>
             <option value="growth">성장률순</option>
-            <option value="recent">최근 분석순</option>
             <option value="name">이름순</option>
           </select>
         </div>
@@ -506,7 +506,7 @@ function setFilter(f, btn) {
 
 function applyFilter() {
   const kw = (document.getElementById('searchInput')?.value||'').toLowerCase();
-  const sort = document.getElementById('sortSel')?.value||'score';
+  const sort = document.getElementById('sortSel')?.value||'recent';
   let list = brands.filter(b=>{
     const mc = curFilter==='all' || b.category===curFilter;
     const mk = !kw || b.name.toLowerCase().includes(kw) || b.category.toLowerCase().includes(kw) || (b.tags||[]).some(t=>t.toLowerCase().includes(kw));
