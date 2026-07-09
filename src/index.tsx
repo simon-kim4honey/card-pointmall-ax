@@ -648,10 +648,11 @@ function renderCatChart() {
 function renderAlerts() {
   const items = [
     {icon:'fire',color:'orange',text:'뷰티 카테고리 팔로워 급증 트렌드 감지 (+18.5%)'},
-    {icon:'chart-line',color:'emerald',text:'패션 신규 브랜드 입점 적기 신호 포착'},
+    {icon:'paw',color:'emerald',text:'펫 카테고리 신규 브랜드 입점 적기 신호 포착'},
     {icon:'star',color:'yellow',text:'라운드랩 AI 점수 91점 — 즉시 입점 검토 권장'},
-    {icon:'exclamation-triangle',color:'red',text:'경쟁사 포인트몰 뷰티 3개 신규 입점 확인'},
-    {icon:'bell',color:'indigo',text:'포인트 만료 시즌 D-30 — 소진 기획전 준비 필요'},
+    {icon:'home',color:'indigo',text:'리빙 카테고리 경쟁사 포인트몰 3개 신규 입점 확인'},
+    {icon:'bell',color:'red',text:'포인트 만료 시즌 D-30 — 토이굿즈 기획전 준비 필요'},
+    {icon:'cube',color:'purple',text:'토이굿즈 한정판 콜래버 시즌 진입 — 소싱 우선 검토 권장'},
   ];
   document.getElementById('alertFeed').innerHTML = items.map(a=>\`
     <div class="flex items-start gap-2.5 py-2 border-b border-slate-700/30 last:border-0">
